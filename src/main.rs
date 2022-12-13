@@ -88,20 +88,22 @@ impl Handler<Disconnect> for Server {
 impl Handler<ForwardMessage> for Server {
     type Result = ();
     fn handle(&mut self, msg: ForwardMessage, _ctx: &mut Self::Context) -> Self::Result {
-        match self.database.lock().unwrap().is_alive(&msg.next) {
-            Ok(status) => match status {
-                true => match self.database.lock().unwrap().get_addr(msg.next.clone()) {
-                    Some(addr) => {
-                        addr.do_send(msg);
-                        // figure out a way to send a "delivered" reply to the sender
-                    }
-                    None => {}
-                },
-                false => {
-                    self.database.lock().unwrap().save_mail_for(msg.next, msg.mail).unwrap();
+        println!("Sending mail...");
+        let status = match self.database.lock().unwrap().is_alive(&msg.next) {
+            Ok(status) => status,
+            Err(_error) => return
+        };
+        match status {
+            true => match self.database.lock().unwrap().get_addr(msg.next.clone()) {
+                Some(addr) => {
+                    addr.do_send(msg);
+                    // figure out a way to send a "delivered" reply to the sender
                 }
+                None => {}
             },
-            Err(error) => println!("{:?}", error),
+            false => {
+                self.database.lock().unwrap().save_mail_for(msg.next, msg.mail).unwrap();
+            }
         }
     }
 }
@@ -203,7 +205,8 @@ async fn get_mailbox(
     query: Query<User>,
     database: web::Data<Arc<Mutex<Database>>>,
 ) -> impl Responder {
-    match database.lock().unwrap().get_mails_for(&query.identifier) {
+    println!("Mailbox requested by {}", &query.identifier);
+    match database.lock().unwrap().get_mails_for(&query.identifier, &query.password) {
         Ok(mail) => serde_json::to_string(&mail).unwrap(),
         Err(_err) => "Failed to get mail".to_owned()
     }
@@ -213,8 +216,10 @@ async fn get_mailbox(
 async fn main() -> std::io::Result<()> {
     let connection = Mutex::new(Database::new("data.db".to_owned()));
     let connection = Arc::new(connection);
+    //let connection = web::Data::new(connection);
     let server = Server::new(&connection);
     let addr = server.start();
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin("localhost:8080")
@@ -223,7 +228,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .wrap(cors)
-            .app_data(web::Data::from(Arc::clone(&connection)))
+            .app_data(web::Data::new(Arc::clone(&connection)))
             .app_data(web::Data::new(addr.clone()))
             .service(web::resource("/").to(index))
             .service(get_mailbox)

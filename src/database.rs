@@ -38,8 +38,22 @@ impl Database {
     }
 
     #[allow(unused)]
-    pub fn get_mails_for(&self, identifier: &str) -> Result<Vec<Email>, rusqlite::Error> {
+    pub fn get_mails_for(&self, identifier: &str, password: &str) -> Result<Vec<Email>, rusqlite::Error> {
         let mut result = vec![];
+        match self.sessions.get(identifier) {
+            Some(session) => {
+                if let Some(p) = &session.password {
+                    if p != password {
+                        return Err(rusqlite::Error::InvalidQuery);
+                    }
+                } else {
+                    return Err(rusqlite::Error::QueryReturnedNoRows);
+                }
+            },
+            None => {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+        }
         /*let mut sql = self
             .connection
             .prepare("SELECT rowid, * FROM MAIL WHERE dest = ?")
