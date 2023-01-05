@@ -88,7 +88,7 @@ impl Handler<Disconnect> for Server {
 impl Handler<ForwardMessage> for Server {
     type Result = ();
     fn handle(&mut self, msg: ForwardMessage, _ctx: &mut Self::Context) -> Self::Result {
-        println!("Sending mail...");
+        println!("Sending mail...{}", msg.mail);
         let status = match self.database.lock().unwrap().is_alive(&msg.next) {
             Ok(status) => status,
             Err(_error) => return
